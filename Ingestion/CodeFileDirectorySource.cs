@@ -64,7 +64,8 @@ public class CSharpFileDirectorySource(string sourceDirectory) : IIngestionSourc
     /// <returns>Code Chunks from the document</returns>
     public IEnumerable<CodeChunk> CreateChunksForDocument(CodeDocument codeDocument)
     {
-        RecursiveCodeSplitter recursiveCodeSplitter = new RecursiveCodeSplitter(200, 20);
+        RecursiveCodeSplitter recursiveCodeSplitter = 
+            new RecursiveCodeSplitter(@"C:\Users\jwong\Desktop\tutorial\IDSChunk\NomicVocab.txt");
         return recursiveCodeSplitter.GetCodeChunks(codeDocument, sourceDirectory);
     }
 }

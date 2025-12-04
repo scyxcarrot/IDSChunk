@@ -22,7 +22,9 @@ public class SemanticSearch(
                 .GetAsync(document => document.RelativePath.Contains(documentNameFilter),top: int.MaxValue)
                 .ToListAsync();
 
-            List<Guid> relevantDocumentIds = relevantDocuments.Select(codeDocument => codeDocument.Id).ToList();
+            List<string> relevantDocumentIds = relevantDocuments
+                .Select(codeDocument => codeDocument.Id.ToString())
+                .ToList();
             searchOptions.Filter = record => relevantDocumentIds.Contains(record.CodeDocumentId);
         }
 

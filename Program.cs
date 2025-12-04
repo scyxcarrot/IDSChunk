@@ -1,11 +1,16 @@
-﻿using IDSChunk.Ingestion;
+﻿using Grpc.Net.Client;
 
+using IDSChunk.Ingestion;
+
+using Microsoft.CodeAnalysis;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.SemanticKernel.Connectors.Qdrant;
 
 using OllamaSharp;
+
+using Qdrant.Client;
 
 using Serilog;
 
@@ -27,9 +32,12 @@ var builder = Host.CreateDefaultBuilder()
         services.AddEmbeddingGenerator(embeddingGenerator);
 
         // register qdrant
+        Uri qdrantUri = new Uri("http://localhost:6334");
+        services.AddSingleton(new QdrantClient(qdrantUri));
+
         services.AddQdrantVectorStore(
-            host: "localhost",
-            port: 6334,
+            host: qdrantUri.Host,
+            port: qdrantUri.Port,
             https: false,
             apiKey: null,
             options: new QdrantVectorStoreOptions

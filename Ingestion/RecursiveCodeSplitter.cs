@@ -1,247 +1,192 @@
-﻿namespace IDSChunk.Ingestion;
+﻿using Microsoft.CodeAnalysis;
+using Microsoft.CodeAnalysis.CSharp;
+using Microsoft.CodeAnalysis.CSharp.Syntax;
+using Microsoft.ML.Tokenizers;
+
+namespace IDSChunk.Ingestion;
 
 public class RecursiveCodeSplitter
 {
-    private readonly List<string> _separators;
-    private readonly int _chunkSize;
-    private readonly int _chunkOverlap;
+    private readonly WordPieceTokenizer _tokenizer;
+    private const int RecommendedMaxTokens = 512;
+
+    public RecursiveCodeSplitter(string vocabFilePath)
+    {
+        try
+        {
+            _tokenizer = WordPieceTokenizer.Create(vocabFilePath);
+        }
+        catch (FileNotFoundException)
+        {
+            throw new InvalidOperationException($"Nomic vocab file not found at: {vocabFilePath}");
+        }
+    }
 
     /// <summary>
-    /// Initializes a new instance of the RecursiveCodeSplitter.
+    /// Counts the number of tokens a text will be encoded to by the Nomic tokenizer.
     /// </summary>
-    /// <param name="chunkSize">The desired maximum length of each chunk.</param>
-    /// <param name="chunkOverlap">The character overlap between consecutive chunks.
-    /// This is primarily applied as a final fixed-size split fallback.</param>
-    /// <param name="separators">Optional. A list of strings to use as separators, ordered
-    /// from the most semantically significant (e.g., paragraphs) to the least (e.g., characters).
-    /// If null, default C# syntax-aware separators are used.</param>
-    public RecursiveCodeSplitter(int chunkSize, int chunkOverlap, List<string>? separators = null)
+    public int GetTokenCount(string text)
     {
-        _chunkSize = chunkSize;
-        _chunkOverlap = chunkOverlap;
-        // Default C# specific separators, ordered from largest semantic unit to smallest.
-        // The order is crucial: try to break on major structural elements first.
-        _separators = separators ?? new List<string>
-        {
-            "\n\n", // Blank lines (often separating major code blocks like classes, methods, regions)
-            "\n",   // Newlines (for individual lines of code)
-            "{", // Start of code blocks (methods, classes, if/for/while blocks). Keeping this helps
-            // ensure a closing brace stays with its block content.
-            "}", // End of code blocks (methods, classes, if/for/while blocks). Keeping this helps
-            // ensure a closing brace stays with its block content.
-            ";", // End of statements. Keeping this helps ensure a statement stays intact.
-        };
+        return _tokenizer.CountTokens(text);
     }
 
     public List<CodeChunk> GetCodeChunks(CodeDocument codeDocument, string sourceDirectory)
     {
         string filePath = Path.Combine(sourceDirectory, codeDocument.RelativePath);
-
-        // split the code in the file into multiple strings
         string fullCodeString = File.ReadAllText(filePath);
 
-        // TODO: Get the namespace from the full code strings
+        // 1. Get the syntax tree and namespace
+        SyntaxTree tree = CSharpSyntaxTree.ParseText(fullCodeString);
+        string namespaceName = GetNamespace(tree.GetCompilationUnitRoot());
 
-        // TODO: Get the class names and method names and using statements once you split the fullCodeString
+        // 2. Split the file into logical units (methods, classes)
+        var splitCodeSnippets = SplitTextIntoCodeSnippets(tree, codeDocument.Id, namespaceName);
 
-        // This is an example of splitting the string by a delimiter (WRONG!)
-        // List<string> splitCodeStrings = SplitText(fullCodeString);
+        var finalChunks = new List<CodeChunk>();
 
-        var codeChunks = new List<CodeChunk>();
-        foreach (var splitCodeString in splitCodeStrings)
+        // 3. Recursively split any large units and collect the final chunks
+        foreach (var chunk in splitCodeSnippets)
         {
-            // TODO: create to check how many tokens will this chunk take
-
-            // TODO: if the chunk is too big, split it further into smaller chunks with overlap of 5 lines
-
-            CodeChunk codeChunk = new CodeChunk()
-            {
-                Id = Guid.CreateVersion7(),
-                CodeDocumentId = codeDocument.Id,
-                CodeSnippet = splitCodeString,
-                ClassName = ,
-                MethodName = ,
-                Namespace = ,
-            };
-
-            codeChunks.Add(codeChunk);
-        }
-
-        return codeChunks;
-    }
-
-    /// <summary>
-    /// Splits the given C# code text into chunks based on predefined syntax-aware separators,
-    /// adhering to a maximum chunk size and overlap.
-    /// </summary>
-    /// <param name="text">The input C# code text to be chunked.</param>
-    /// <returns>A list of text chunks, where each chunk is a semantically meaningful portion of the code.</returns>
-    private List<string> SplitText(string text)
-    {
-        List<string> finalChunks = new List<string>();
-        if (string.IsNullOrEmpty(text))
-        {
-            return finalChunks;
-        }
-
-        // Step 1: Perform the recursive splitting based on C# syntax-aware delimiters.
-        // This generates potentially large, but semantically coherent, raw chunks.
-        List<string> rawChunks = InternalSplit(text, _separators);
-
-        // Step 2: Iterate through the raw chunks. If any raw chunk is still too large
-        // (after recursive splitting, which prioritizes semantic breaks over strict size),
-        // apply a final fixed-size splitting with overlap. This ensures all final chunks
-        // meet the _chunkSize constraint while preserving some context.
-        foreach (string currentChunk in rawChunks)
-        {
-            if (currentChunk.Length > _chunkSize)
-            {
-                // If a chunk is still too big, break it down further using fixed-size with overlap.
-                // This is the fallback for when semantic splits don't yield small enough chunks.
-                finalChunks.AddRange(FixedSizeChunkerWithOverlap(currentChunk, _chunkSize, _chunkOverlap));
-            }
-            else
-            {
-                // If the chunk is already within the desired size, add it directly.
-                finalChunks.Add(currentChunk);
-            }
+            finalChunks.AddRange(SplitChunkRecursively(chunk));
         }
 
         return finalChunks;
     }
 
     /// <summary>
-    /// Recursively splits the text by the current separator. If a resulting part is still too large,
-    /// it tries to split it further using the next separator in the prioritized list.
+    /// Extracts the first declared namespace using Roslyn.
     /// </summary>
-    /// <param name="text">The current text segment to split.</param>
-    /// <param name="currentSeparators">The list of separators remaining to be tried, in order.</param>
-    /// <returns>A list of chunks generated by this recursive step.</returns>
-    private List<string> InternalSplit(string text, List<string> currentSeparators)
+    private string GetNamespace(CompilationUnitSyntax root)
     {
-        List<string> chunks = new List<string>();
-        if (string.IsNullOrEmpty(text))
+        var namespaceDeclaration = root.DescendantNodes()
+            .OfType<BaseNamespaceDeclarationSyntax>()
+            .FirstOrDefault();
+        return namespaceDeclaration?.Name.ToString();
+    }
+
+    /// <summary>
+    /// Uses Roslyn to split the file into initial CodeChunk objects based on C# structure.
+    /// </summary>
+    private List<CodeChunk> SplitTextIntoCodeSnippets(SyntaxTree tree, Guid codeDocumentId, string namespaceName)
+    {
+        var chunks = new List<CodeChunk>();
+        var root = tree.GetCompilationUnitRoot();
+
+        // 1. Find all classes
+        var classDeclarations = root.DescendantNodes().OfType<ClassDeclarationSyntax>();
+
+        foreach (var classDeclaration in classDeclarations)
         {
-            return chunks;
-        }
+            string className = classDeclaration.Identifier.Text;
 
-        // Base case: If no more separators are available, the current text segment
-        // cannot be further broken down semantically by a defined separator.
-        // It will be handled by the FixedSizeChunkerWithOverlap in the main SplitText method
-        // if its length exceeds _chunkSize.
-        if (currentSeparators.Count == 0)
-        {
-            chunks.Add(text.Trim());
-            return chunks;
-        }
+            // 2. Find all methods within the class
+            var methodDeclarations = classDeclaration.DescendantNodes().OfType<MethodDeclarationSyntax>();
 
-        string currentSeparator = currentSeparators[0];
-        List<string> nextSeparators = currentSeparators.Skip(1).ToList();
-
-        // Determine if the current separator (like '}' or ';') should be included in the chunk.
-        // This is important for C# code structure to keep logical units together.
-        bool shouldKeepSeparator = currentSeparator == "}" ||
-                                   currentSeparator == "{" ||
-                                   currentSeparator == ";";
-
-        List<string> parts = new List<string>();
-        int lastIndex = 0;
-        int sepLength = currentSeparator.Length;
-
-        // Manually find and split by the current separator to control inclusion/exclusion.
-        while (lastIndex < text.Length)
-        {
-            int sepIndex = text.IndexOf(currentSeparator, lastIndex, StringComparison.Ordinal);
-
-            if (sepIndex == -1) // Separator not found, add the remaining text as the last part
+            foreach (var method in methodDeclarations)
             {
-                string remaining = text.Substring(lastIndex);
-                if (!string.IsNullOrWhiteSpace(remaining))
+                // ToFullString() includes trivia (whitespace, comments) which is better for context
+                string methodCode = method.ToFullString();
+                string methodName = method.Identifier.Text;
+
+                // Create the initial chunk based on the method
+                CodeChunk chunk = new CodeChunk()
                 {
-                    parts.Add(remaining.Trim());
-                }
-
-                break; // Exit the loop
-            }
-
-            // Extract the text segment before the separator
-            string partBeforeSeparator = text.Substring(lastIndex, sepIndex - lastIndex);
-
-            // Construct the chunk to add, potentially including the separator
-            string chunkToAdd = partBeforeSeparator.Trim();
-
-            // If the separator should be kept, append it to the current chunk
-            if (shouldKeepSeparator && !string.IsNullOrEmpty(currentSeparator))
-            {
-                chunkToAdd += currentSeparator;
-            }
-
-            // Add the constructed chunk if it's not empty after trimming
-            if (!string.IsNullOrWhiteSpace(chunkToAdd))
-            {
-                parts.Add(chunkToAdd);
-            }
-
-            // Move the lastIndex past the current separator for the next iteration
-            lastIndex = sepIndex + sepLength;
-        }
-
-        // Handle cases where no splits occurred, but the original text was not empty
-        if (parts.Count == 0 && !string.IsNullOrWhiteSpace(text))
-        {
-            parts.Add(text.Trim());
-        }
-
-        // Recursively process each part generated by the current separator
-        foreach (string part in parts)
-        {
-            if (string.IsNullOrEmpty(part)) continue;
-
-            // If the part is still larger than the target chunk size AND there are more
-            // specific separators to try (e.g., a "paragraph" was too long, try splitting by "lines")
-            if (part.Length > _chunkSize && nextSeparators.Any())
-            {
-                chunks.AddRange(InternalSplit(part, nextSeparators)); // Recurse with the next separator
-            }
-            else
-            {
-                // If the part is within the desired size or no more separators, add it directly.
-                // The final fixed-size chunking (with overlap) will be applied in SplitText if needed.
-                chunks.Add(part);
+                    Id = Guid.CreateVersion7(),
+                    CodeDocumentId = codeDocumentId.ToString(),
+                    CodeSnippet = methodCode,
+                    ClassName = className,
+                    MethodName = methodName,
+                    Namespace = namespaceName,
+                };
+                chunks.Add(chunk);
             }
         }
+
+        // Add other top-level statements (e.g., global usings, static methods, records, structs) here if needed.
 
         return chunks;
     }
 
+    // --- Recursive Splitting Method ---
+
     /// <summary>
-    /// A helper method to perform a fixed-size split with overlap. This is used as a fallback
-    /// when semantic splitting (recursive splitting) does not yield chunks small enough.
+    /// Recursively splits a chunk into smaller, token-limit-adhering chunks.
+    /// Uses line-based splitting with overlap.
     /// </summary>
-    /// <param name="text">The text to split.</param>
-    /// <param name="chunkSize">The maximum size of each chunk.</param>
-    /// <param name="overlapSize">The size of the overlap between consecutive chunks.</param>
-    /// <returns>A list of fixed-size, potentially overlapping, chunks.</returns>
-    private static List<string> FixedSizeChunkerWithOverlap(string text, int chunkSize, int overlapSize)
+    private List<CodeChunk> SplitChunkRecursively(CodeChunk codeChunk)
     {
-        List<string> chunks = new List<string>();
-        if (string.IsNullOrEmpty(text) || chunkSize <= 0) return chunks;
+        int tokenCount = GetTokenCount(codeChunk.CodeSnippet);
 
-        // Calculate the step size for moving through the text
-        // Ensures progress and considers overlap
-        int step = chunkSize - overlapSize;
-        if (step <= 0) step = 1; // Avoid infinite loop for invalid overlap sizes
-
-        for (int i = 0; i < text.Length; i += step)
+        // Base case: Chunk is within the recommended limit
+        if (tokenCount <= RecommendedMaxTokens)
         {
-            // Determine the length of the current chunk, ensuring it doesn't exceed text bounds
-            int len = Math.Min(chunkSize, text.Length - i);
-            if (len > 0)
-            {
-                chunks.Add(text.Substring(i, len));
-            }
+            return new List<CodeChunk> { codeChunk };
         }
 
-        return chunks;
+        // Recursive Case: Chunk is too big, split by lines with overlap
+        var smallerChunks = new List<CodeChunk>();
+        var lines = codeChunk.CodeSnippet.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
+
+        const int OverlapLines = 5; // A common overlap for code or text
+        int currentLineIndex = 0;
+
+        while (currentLineIndex < lines.Length)
+        {
+            List<string> currentChunkLines = new List<string>();
+            int tempLineIndex = currentLineIndex;
+
+            // Start with overlap from the previous chunk, if applicable
+            for (int i = 0; i < OverlapLines && (currentLineIndex - OverlapLines + i) >= 0 && i < currentLineIndex; i++)
+            {
+                currentChunkLines.Add(lines[currentLineIndex - OverlapLines + i]);
+            }
+
+            // Build the current chunk by adding lines until the token limit is approached
+            while (tempLineIndex < lines.Length)
+            {
+                string nextLine = lines[tempLineIndex];
+
+                // Temporarily combine the lines to check the token count
+                string testSnippet = string.Join(Environment.NewLine, currentChunkLines.Concat(new[] { nextLine }));
+
+                if (GetTokenCount(testSnippet) <= RecommendedMaxTokens)
+                {
+                    currentChunkLines.Add(nextLine);
+                    tempLineIndex++;
+                }
+                else
+                {
+                    // Adding the next line exceeds the limit, break and process the current chunk
+                    break;
+                }
+            }
+
+            // If we couldn't add any lines, we must add at least the current line and advance
+            if (currentChunkLines.Count == 0 && currentLineIndex < lines.Length)
+            {
+                currentChunkLines.Add(lines[currentLineIndex]);
+                tempLineIndex = currentLineIndex + 1; // Advance by one line
+            }
+
+            // Create a new chunk object
+            if (currentChunkLines.Any())
+            {
+                string newSnippet = string.Join(Environment.NewLine, currentChunkLines);
+                smallerChunks.Add(new CodeChunk
+                {
+                    Id = Guid.CreateVersion7(),
+                    CodeDocumentId = codeChunk.CodeDocumentId,
+                    CodeSnippet = newSnippet,
+                    ClassName = codeChunk.ClassName,
+                    MethodName = codeChunk.MethodName, // Preserve context from the original large chunk
+                    Namespace = codeChunk.Namespace
+                });
+            }
+
+            // Move the pointer to the start of the next new, non-overlapping section
+            currentLineIndex = tempLineIndex;
+        }
+
+        return smallerChunks;
     }
 }

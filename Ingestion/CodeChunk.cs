@@ -8,7 +8,7 @@ public class CodeChunk
     public required Guid Id { get; set; }
 
     [VectorStoreData(IsIndexed = true)]
-    public required Guid CodeDocumentId { get; set; }
+    public required string CodeDocumentId { get; set; }
 
     [VectorStoreData]
     public required string Namespace { get; set; }
@@ -23,7 +23,7 @@ public class CodeChunk
     public required string CodeSnippet { get; set; }
 
     // 768 is the default vector size for the nomic-embed-text:latest
-    [VectorStoreVector(768, DistanceFunction = DistanceFunction.CosineDistance)]
+    [VectorStoreVector(768, DistanceFunction = DistanceFunction.CosineSimilarity)]
     public ReadOnlyMemory<float> CodeSnippetEmbedding { get; set; }
 
 }
