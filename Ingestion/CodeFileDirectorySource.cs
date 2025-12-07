@@ -86,7 +86,7 @@ public class CSharpFileDirectorySource(
     public async Task<IEnumerable<CodeChunk>> CreateChunksForDocument(CodeDocument codeDocument)
     {
         string appDirectory = AppDomain.CurrentDomain.BaseDirectory;
-        string vocabPath = Path.Combine(appDirectory, "NomicVocab.txt");
+        string vocabPath = Path.Combine(appDirectory, "tokenizer.model");
         CodeSplitter recursiveCodeSplitter = 
             new CodeSplitter(
                 vocabPath, 

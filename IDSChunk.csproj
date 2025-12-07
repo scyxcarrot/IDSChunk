@@ -28,7 +28,7 @@
       <None Update="NomicVocab.txt">
         <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
       </None>
-      <None Update="tokenizer.json">
+      <None Update="tokenizer.model">
         <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
       </None>
   </ItemGroup>
