@@ -85,9 +85,11 @@ public class CSharpFileDirectorySource(
     /// <returns>Code Chunks from the document</returns>
     public async Task<IEnumerable<CodeChunk>> CreateChunksForDocument(CodeDocument codeDocument)
     {
+        string appDirectory = AppDomain.CurrentDomain.BaseDirectory;
+        string vocabPath = Path.Combine(appDirectory, "NomicVocab.txt");
         CodeSplitter recursiveCodeSplitter = 
             new CodeSplitter(
-                @"C:\Users\jwong\Desktop\tutorial\IDSChunk\NomicVocab.txt", 
+                vocabPath, 
                 embeddingGenerator);
         return await recursiveCodeSplitter.GetCodeChunks(codeDocument, sourceDirectory);
     }

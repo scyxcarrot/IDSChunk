@@ -24,4 +24,10 @@
     <PackageReference Include="System.Linq.Async" Version="7.0.0" />
   </ItemGroup>
 
+  <ItemGroup>
+      <None Update="NomicVocab.txt">
+        <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      </None>
+  </ItemGroup>
+
 </Project>
