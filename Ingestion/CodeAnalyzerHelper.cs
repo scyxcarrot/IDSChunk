@@ -1,7 +1,5 @@
 ﻿using System.Text;
 
-using Grpc.Net.Client.Configuration;
-
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
