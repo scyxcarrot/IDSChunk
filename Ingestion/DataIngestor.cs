@@ -61,10 +61,10 @@ public class DataIngestor(
 
                 counter++;
                 logger.LogInformation("Progress {counter}/{modifiedDocumentCount}", counter, modifiedDocumentCount);
-
             }
             catch
             {
+                logger.LogError("Creating chunks failed");
                 await DeleteChunksForDocumentAsync(modifiedDocument);
                 await documentsCollection.DeleteAsync(modifiedDocument.Id);
             }
@@ -88,6 +88,9 @@ public class DataIngestor(
 
     public async Task DeleteDocumentAndChunks(string relativePath)
     {
+        await chunksCollection.EnsureCollectionExistsAsync();
+        await documentsCollection.EnsureCollectionExistsAsync();
+
         List<CodeDocument> documentToDelete = await documentsCollection
             .GetAsync(codeDocument => codeDocument.RelativePath == relativePath, int.MaxValue)
             .ToListAsync();
