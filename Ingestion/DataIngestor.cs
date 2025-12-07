@@ -51,8 +51,17 @@ public class DataIngestor(
             await DeleteChunksForDocumentAsync(modifiedDocument);
             await documentsCollection.UpsertAsync(modifiedDocument);
 
-            IEnumerable<CodeChunk> newCodeChunks = await source.CreateChunksForDocument(modifiedDocument);
-            await chunksCollection.UpsertAsync(newCodeChunks);
+            try
+            {
+                IEnumerable<CodeChunk> newCodeChunks = await source.CreateChunksForDocument(modifiedDocument);
+                await chunksCollection.UpsertAsync(newCodeChunks);
+            }
+            catch
+            {
+                await DeleteChunksForDocumentAsync(modifiedDocument);
+                await documentsCollection.DeleteAsync(modifiedDocument.Id);
+                throw;
+            }
         }
 
         logger.LogInformation("Ingestion is complete");
