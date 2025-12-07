@@ -14,10 +14,7 @@ public class CodeChunk
     public required string Namespace { get; set; }
 
     [VectorStoreData]
-    public required string ClassName { get; set; }
-
-    [VectorStoreData]
-    public required string MethodName { get; set; }
+    public required string TypeName { get; set; }
 
     [VectorStoreData]
     public required string CodeSnippet { get; set; }

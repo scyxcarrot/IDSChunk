@@ -1,18 +1,17 @@
 ﻿using Microsoft.CodeAnalysis;
-using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 using Microsoft.Extensions.AI;
 using Microsoft.ML.Tokenizers;
 
 namespace IDSChunk.Ingestion;
 
-public class RecursiveCodeSplitter
+public class CodeSplitter
 {
     private readonly WordPieceTokenizer _tokenizer;
     private readonly IEmbeddingGenerator<string, Embedding<float>> _embeddingGenerator;
     private const int RecommendedMaxTokens = 512;
 
-    public RecursiveCodeSplitter(
+    public CodeSplitter(
         string vocabFilePath, 
         IEmbeddingGenerator<string, Embedding<float>> embeddingGenerator)
     {
@@ -38,19 +37,24 @@ public class RecursiveCodeSplitter
     public async Task<List<CodeChunk>> GetCodeChunks(CodeDocument codeDocument, string sourceDirectory)
     {
         string filePath = Path.Combine(sourceDirectory, codeDocument.RelativePath);
-        string fullCodeString = await File.ReadAllTextAsync(filePath);
+        CodeAnalyzerHelper codeAnalyzerHelper = new CodeAnalyzerHelper(filePath, codeDocument);
 
-        // 1. Get the syntax tree and namespace
-        SyntaxTree tree = CSharpSyntaxTree.ParseText(fullCodeString);
-        string namespaceName = GetNamespace(tree.GetCompilationUnitRoot());
+        List<CodeChunk> chunks = new List<CodeChunk>();
+        IEnumerable<ClassDeclarationSyntax> classDeclarations = codeAnalyzerHelper.GetClassDeclarations();
+        chunks.AddRange(codeAnalyzerHelper.CreateClassChunks(classDeclarations));
 
-        // 2. Split the file into logical units (methods, classes)
-        var splitCodeSnippets = SplitTextIntoCodeSnippets(tree, codeDocument.Id, namespaceName);
+        IEnumerable<InterfaceDeclarationSyntax> interfaceDeclarations = codeAnalyzerHelper.GetInterfaceDeclarations();
+        chunks.AddRange(codeAnalyzerHelper.CreateInterfaceChunks(interfaceDeclarations));
+
+        IEnumerable<EnumDeclarationSyntax> enumDeclarations = codeAnalyzerHelper.GetEnumDeclarations();
+        chunks.AddRange(codeAnalyzerHelper.CreateEnumChunks(enumDeclarations));
+
+        IEnumerable<StructDeclarationSyntax> structDeclarations = codeAnalyzerHelper.GetStructDeclarations();
+        chunks.AddRange(codeAnalyzerHelper.CreateStructChunks(structDeclarations));
 
         var finalChunks = new List<CodeChunk>();
 
-        // 3. Recursively split any large units and collect the final chunks
-        foreach (var chunk in splitCodeSnippets)
+        foreach (var chunk in chunks)
         {
             var splitChunks = await SplitChunkRecursively(chunk);
             finalChunks.AddRange(splitChunks);
@@ -58,61 +62,6 @@ public class RecursiveCodeSplitter
 
         return finalChunks;
     }
-
-    /// <summary>
-    /// Extracts the first declared namespace using Roslyn.
-    /// </summary>
-    private string GetNamespace(CompilationUnitSyntax root)
-    {
-        var namespaceDeclaration = root.DescendantNodes()
-            .OfType<BaseNamespaceDeclarationSyntax>()
-            .FirstOrDefault();
-        return namespaceDeclaration?.Name.ToString();
-    }
-
-    /// <summary>
-    /// Uses Roslyn to split the file into initial CodeChunk objects based on C# structure.
-    /// </summary>
-    private List<CodeChunk> SplitTextIntoCodeSnippets(SyntaxTree tree, Guid codeDocumentId, string namespaceName)
-    {
-        var chunks = new List<CodeChunk>();
-        var root = tree.GetCompilationUnitRoot();
-
-        // 1. Find all classes
-        var classDeclarations = root.DescendantNodes().OfType<ClassDeclarationSyntax>();
-
-        foreach (var classDeclaration in classDeclarations)
-        {
-            string className = classDeclaration.Identifier.Text;
-
-            // 2. Find all methods within the class
-            var methodDeclarations = classDeclaration.DescendantNodes().OfType<MethodDeclarationSyntax>();
-            foreach (var method in methodDeclarations)
-            {
-                // ToFullString() includes trivia (whitespace, comments) which is better for context
-                string methodCode = method.ToFullString();
-                string methodName = method.Identifier.Text;
-
-                // Create the initial chunk based on the method
-                CodeChunk chunk = new CodeChunk()
-                {
-                    Id = Guid.CreateVersion7(),
-                    CodeDocumentId = codeDocumentId.ToString(),
-                    CodeSnippet = methodCode,
-                    ClassName = className,
-                    MethodName = methodName,
-                    Namespace = namespaceName,
-                };
-                chunks.Add(chunk);
-            }
-        }
-
-        // Add other top-level statements (e.g., global usings, static methods, records, structs) here if needed.
-
-        return chunks;
-    }
-
-    // --- Recursive Splitting Method ---
 
     /// <summary>
     /// Recursively splits a chunk into smaller, token-limit-adhering chunks.
@@ -134,7 +83,7 @@ public class RecursiveCodeSplitter
         var smallerChunks = new List<CodeChunk>();
         var lines = codeChunk.CodeSnippet.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
 
-        const int OverlapLines = 5; // A common overlap for code or text
+        const int overlapLines = 5; // A common overlap for code or text
         int currentLineIndex = 0;
 
         while (currentLineIndex < lines.Length)
@@ -143,9 +92,9 @@ public class RecursiveCodeSplitter
             int tempLineIndex = currentLineIndex;
 
             // Start with overlap from the previous chunk, if applicable
-            for (int i = 0; i < OverlapLines && (currentLineIndex - OverlapLines + i) >= 0 && i < currentLineIndex; i++)
+            for (int i = 0; i < overlapLines && (currentLineIndex - overlapLines + i) >= 0 && i < currentLineIndex; i++)
             {
-                currentChunkLines.Add(lines[currentLineIndex - OverlapLines + i]);
+                currentChunkLines.Add(lines[currentLineIndex - overlapLines + i]);
             }
 
             // Build the current chunk by adding lines until the token limit is approached
@@ -185,8 +134,7 @@ public class RecursiveCodeSplitter
                     Id = Guid.CreateVersion7(),
                     CodeDocumentId = codeChunk.CodeDocumentId,
                     CodeSnippet = newSnippet,
-                    ClassName = codeChunk.ClassName,
-                    MethodName = codeChunk.MethodName, // Preserve context from the original large chunk
+                    TypeName = codeChunk.TypeName,
                     Namespace = codeChunk.Namespace,
                     CodeSnippetEmbedding = embedding.Vector,
                 });

@@ -1,5 +1,5 @@
 ﻿using System.Security.Cryptography;
-using System.Text;
+
 using Microsoft.Extensions.AI;
 
 namespace IDSChunk.Ingestion;
@@ -85,8 +85,8 @@ public class CSharpFileDirectorySource(
     /// <returns>Code Chunks from the document</returns>
     public async Task<IEnumerable<CodeChunk>> CreateChunksForDocument(CodeDocument codeDocument)
     {
-        RecursiveCodeSplitter recursiveCodeSplitter = 
-            new RecursiveCodeSplitter(
+        CodeSplitter recursiveCodeSplitter = 
+            new CodeSplitter(
                 @"C:\Users\jwong\Desktop\tutorial\IDSChunk\NomicVocab.txt", 
                 embeddingGenerator);
         return await recursiveCodeSplitter.GetCodeChunks(codeDocument, sourceDirectory);

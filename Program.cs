@@ -12,7 +12,7 @@ using Qdrant.Client;
 using Serilog;
 
 const string chatModelId = "gemma3:12b";
-const string embeddingModelId = "nomic-embed-text";
+const string embeddingModelId = "nomic-embed-text:latest";
 
 var builder = Host.CreateDefaultBuilder()
     .UseSerilog((context, configuration) =>
