@@ -11,7 +11,7 @@ using Qdrant.Client;
 
 using Serilog;
 
-const string chatModelId = "gemma3:12b";
+const string chatModelId = "gemma3:1b";
 const string embeddingModelId = "embeddinggemma:latest";
 //const string embeddingModelId = "nomic-embed-text:latest";
 
