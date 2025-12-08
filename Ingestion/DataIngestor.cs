@@ -48,6 +48,7 @@ public class DataIngestor(
         int modifiedDocumentCount = modifiedDocuments.Count();
 
         int counter = 0;
+        int errorCount = 0;
         foreach (var modifiedDocument in modifiedDocuments)
         {
             logger.LogInformation("Processing {documentId}", modifiedDocument.RelativePath);
@@ -60,14 +61,21 @@ public class DataIngestor(
                 await chunksCollection.UpsertAsync(newCodeChunks);
 
                 counter++;
-                logger.LogInformation("Progress {counter}/{modifiedDocumentCount}", counter, modifiedDocumentCount);
             }
             catch
             {
+                errorCount++;
                 logger.LogError("Creating chunks failed");
                 await DeleteChunksForDocumentAsync(modifiedDocument);
                 await documentsCollection.DeleteAsync(modifiedDocument.Id);
             }
+
+            logger.LogInformation(
+                "Progress {counter}/{modifiedDocumentCount}. ErrorCount {errorCount}", 
+                counter, 
+                modifiedDocumentCount, 
+                errorCount);
+
         }
 
         logger.LogInformation("Ingestion is complete");
