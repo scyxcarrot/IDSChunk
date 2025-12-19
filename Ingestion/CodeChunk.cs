@@ -19,6 +19,9 @@ public class CodeChunk
     [VectorStoreData]
     public required string CodeSnippet { get; set; }
 
+    [VectorStoreData]
+    public required int TokenCount { get; set; }
+
     // 768 is the default vector size for the nomic-embed-text:latest
     [VectorStoreVector(768, DistanceFunction = DistanceFunction.CosineSimilarity)]
     public ReadOnlyMemory<float> CodeSnippetEmbedding { get; set; }

@@ -99,6 +99,7 @@ public class CodeSplitter
         {
             var embedding = await _embeddingGenerator.GenerateAsync(codeChunk.CodeSnippet);
             codeChunk.CodeSnippetEmbedding = embedding.Vector;
+            codeChunk.TokenCount = tokenCount;
             return new List<CodeChunk> { codeChunk };
         }
 
@@ -153,6 +154,7 @@ public class CodeSplitter
             {
                 string newSnippet = string.Join(Environment.NewLine, currentChunkLines);
                 var embedding = await _embeddingGenerator.GenerateAsync(newSnippet);
+                int snippetTokenCount = GetTokenCount(newSnippet);
                 smallerChunks.Add(new CodeChunk
                 {
                     Id = Guid.CreateVersion7(),
@@ -160,6 +162,7 @@ public class CodeSplitter
                     CodeSnippet = newSnippet,
                     TypeName = codeChunk.TypeName,
                     Namespace = codeChunk.Namespace,
+                    TokenCount = snippetTokenCount,
                     CodeSnippetEmbedding = embedding.Vector,
                 });
             }

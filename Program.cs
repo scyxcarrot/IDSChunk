@@ -45,8 +45,12 @@ var builder = Host.CreateDefaultBuilder()
                 EmbeddingGenerator = embeddingGenerator
             }
         );
+
         services.AddQdrantCollection<Guid, CodeChunk>("CodeExplainer-IDS-CodeChunk");
         services.AddQdrantCollection<Guid, CodeDocument>("CodeExplainer-IDS-CodeDocument");
+        //services.AddQdrantCollection<Guid, CodeChunk>("CodeExplainer-IDS-CodeChunk-ShortUsingStatement");
+        //services.AddQdrantCollection<Guid, CodeDocument>("CodeExplainer-IDS-CodeDocument-ShortUsingStatement");
+
 
         services.AddScoped<DataIngestor>();
         services.AddSingleton<SemanticSearch>();
@@ -61,32 +65,32 @@ using var scope = host.Services.CreateScope();
 var embeddingGenerator = scope.ServiceProvider.GetService<IEmbeddingGenerator<string, Embedding<float>>>();
 
 // delete the previous failed embedding to make sure its properly trained
-// await DataIngestor.DeleteDocumentAndChunks(host.Services, @"IDSPICMF\IDSPICMFPlugIn.cs");
-//await DataIngestor.IngestDataAsync(
-//    host.Services,
-//    new CSharpFileDirectorySource(@"C:\Users\jwong\Desktop\IDS", embeddingGenerator));
+await DataIngestor.DeleteDocumentAndChunks(host.Services, @"IDSPICMF\IDSPICMFPlugIn.cs");
+await DataIngestor.IngestDataAsync(
+    host.Services,
+    new CSharpFileDirectorySource(@"C:\Users\scheah\Desktop\IDS\IDSCMFImplantCreation\Temp", embeddingGenerator));
 
-var systemMessage = new ChatMessage(ChatRole.System, "You are a helpful assistant specialized in retrieving code base knowledge using RAG");
-string userQuery = "Tell me about ImplantDataModel";
-var userMessage = new ChatMessage(ChatRole.User, userQuery);
-var queryEmbedding = await embeddingGenerator.GenerateVectorAsync(userQuery);
+//var systemMessage = new ChatMessage(ChatRole.System, "You are a helpful assistant specialized in retrieving code base knowledge using RAG");
+//string userQuery = "Tell me about IConfiguration";
+//var userMessage = new ChatMessage(ChatRole.User, userQuery);
+//var queryEmbedding = await embeddingGenerator.GenerateVectorAsync(userQuery);
 
-VectorStoreCollection<Guid, CodeChunk> codeChunkCollection =
-    scope.ServiceProvider.GetService<VectorStoreCollection<Guid, CodeChunk>>();
-var results = codeChunkCollection.SearchAsync(queryEmbedding, 10, new VectorSearchOptions<CodeChunk>()
-{
-    VectorProperty = codeChunk => codeChunk.CodeSnippetEmbedding
-});
+//VectorStoreCollection<Guid, CodeChunk> codeChunkCollection =
+//    scope.ServiceProvider.GetService<VectorStoreCollection<Guid, CodeChunk>>();
+//var results = codeChunkCollection.SearchAsync(queryEmbedding, 10, new VectorSearchOptions<CodeChunk>()
+//{
+//    VectorProperty = codeChunk => codeChunk.CodeSnippetEmbedding
+//});
 
-await foreach (var result in results)
-{
-    var score = result.Score ?? 0;
-    var percent = (score * 100).ToString("F2");
-    string codeSnippet = result.Record.CodeSnippet;
+//await foreach (var result in results)
+//{
+//    var score = result.Score ?? 0;
+//    var percent = (score * 100).ToString("F2");
+//    string codeSnippet = result.Record.CodeSnippet;
 
-    Console.WriteLine($"Score = {score}");
-    Console.WriteLine($"=== CodeSnippet ===");
-    Console.WriteLine(codeSnippet);
-}
+//    Console.WriteLine($"Score = {score}");
+//    Console.WriteLine($"=== CodeSnippet ===");
+//    Console.WriteLine(codeSnippet);
+//}
 
-Console.ReadLine();
+//Console.ReadLine();

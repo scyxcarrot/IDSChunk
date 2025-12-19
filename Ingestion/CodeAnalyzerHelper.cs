@@ -50,6 +50,74 @@ namespace IDSChunk.Ingestion
         }
 
         /// <summary>
+        /// Returns only the using statements actually referenced in the given syntax node.
+        /// </summary>
+        public string GetUsingStatements(SyntaxNode node)
+        {
+            SyntaxList<UsingDirectiveSyntax> usingDirectives = CompilationUnitSyntax.Usings;
+
+            var references = new List<MetadataReference>
+            {
+                MetadataReference.CreateFromFile(typeof(object).Assembly.Location),
+                MetadataReference.CreateFromFile(typeof(Console).Assembly.Location),
+                MetadataReference.CreateFromFile(typeof(Enumerable).Assembly.Location),
+                MetadataReference.CreateFromFile(typeof(StringBuilder).Assembly.Location),
+                MetadataReference.CreateFromFile(typeof(System.IO.Path).Assembly.Location),
+                MetadataReference.CreateFromFile(typeof(System.Reflection.Assembly).Assembly.Location),
+                MetadataReference.CreateFromFile(typeof(System.Globalization.CultureInfo).Assembly.Location),
+                MetadataReference.CreateFromFile(typeof(System.Xml.XmlNode).Assembly.Location)
+            };
+
+            var compilation = CSharpCompilation.Create(
+                "TempAnalysis",
+                syntaxTrees: new[] { CompilationUnitSyntax.SyntaxTree },
+                references: references
+            );
+
+            var semanticModel = compilation.GetSemanticModel(CompilationUnitSyntax.SyntaxTree);
+
+            var identifiers = node.DescendantNodes()
+                                  .OfType<IdentifierNameSyntax>()
+                                  .ToList();
+
+            var usedUsings = new List<string>();
+
+            foreach (UsingDirectiveSyntax usingDirective in usingDirectives)
+            {
+                var nsText = usingDirective.Name.ToString();
+
+                // Try semantic match
+                bool isUsedSemantic = false;
+                var nsSymbol = semanticModel.GetSymbolInfo(usingDirective.Name).Symbol as INamespaceSymbol;
+
+                if (nsSymbol != null)
+                {
+                    isUsedSemantic = identifiers
+                        .Select(id => semanticModel.GetSymbolInfo(id).Symbol)
+                        .Any(symbol =>
+                            symbol?.ContainingNamespace != null &&
+                            (
+                                symbol.ContainingNamespace.ToDisplayString() == nsSymbol.ToDisplayString() ||
+                                symbol.ContainingNamespace.ToDisplayString().StartsWith(nsSymbol.ToDisplayString())
+                            )
+                        );
+                }
+
+                // Fallback: pure syntax matching if semantic fails
+                bool isUsedSyntax = identifiers
+                    .Any(idName => idName.Identifier.ValueText.StartsWith(nsText.Split('.').Last()) ||
+                                   idName.Identifier.ValueText == nsText.Split('.').Last());
+
+                if (isUsedSemantic || isUsedSyntax)
+                {
+                    usedUsings.Add(usingDirective.ToString());
+                }
+            }
+
+            return string.Join(Environment.NewLine, usedUsings);
+        }
+
+        /// <summary>
         /// Get namespace
         /// </summary>
         /// <returns></returns>
@@ -310,6 +378,7 @@ namespace IDSChunk.Ingestion
                         CodeSnippet = stringBuilder.ToString(),
                         TypeName = structName,
                         Namespace = namespaceName,
+                        TokenCount = 0,
                     };
                     chunks.Add(chunk);
                 }
@@ -358,6 +427,7 @@ namespace IDSChunk.Ingestion
                         CodeSnippet = stringBuilder.ToString(),
                         TypeName = enumName,
                         Namespace = namespaceName,
+                        TokenCount = 0,
                     };
                     chunks.Add(chunk);
                 }
@@ -406,6 +476,7 @@ namespace IDSChunk.Ingestion
                         CodeSnippet = stringBuilder.ToString(),
                         TypeName = interfaceName,
                         Namespace = namespaceName,
+                        TokenCount = 0,
                     };
 
                     chunks.Add(chunk);
@@ -455,6 +526,7 @@ namespace IDSChunk.Ingestion
                         CodeSnippet = stringBuilder.ToString(),
                         TypeName = className,
                         Namespace = namespaceName,
+                        TokenCount = 0,
                     };
                     chunks.Add(chunk);
                 }
@@ -483,6 +555,7 @@ namespace IDSChunk.Ingestion
                         CodeSnippet = stringBuilder.ToString(),
                         TypeName = className,
                         Namespace = namespaceName,
+                        TokenCount = 0,
                     };
 
                     chunks.Add(chunk);
